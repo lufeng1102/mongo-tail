@@ -1,11 +1,11 @@
 package org.mongo.util;
 
-import static org.junit.Assert.*;
+import org.junit.Test;
 
 import java.io.IOException;
 import java.util.Properties;
 
-import org.junit.Test;
+import static org.junit.Assert.assertEquals;
 
 public class PropsLoaderTest {
 
@@ -13,7 +13,7 @@ public class PropsLoaderTest {
    public void testLoadProps() throws IOException {
       PropsLoader pl = new PropsLoader();
       Properties mongoProps = pl.loadMongoProperties();
-      assertEquals("localhost:27017", mongoProps.get("mongosHostInfo"));
+      assertEquals("192.168.3.66:27117", mongoProps.get("mongosHostInfo"));
    }
 
 }
