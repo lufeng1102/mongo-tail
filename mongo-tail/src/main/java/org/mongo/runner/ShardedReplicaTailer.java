@@ -1,6 +1,5 @@
 package org.mongo.runner;
 
-import com.mongodb.DB;
 import com.mongodb.MongoClient;
 
 import org.apache.log4j.Logger;
@@ -15,15 +14,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Properties;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class ShardedReplicaTailer {
   private static MongoClient hostMongoS = null;
-  private static MongoClient timeClient;
   private static Map<String, MongoClient> shardSetClients;
-  private static DB timeDB;
+  private static TimeDBService timeDB;
   private static ExecutorService executor;
+  private static CountDownLatch latch;
 
   private static Logger LOG = Logger.getLogger(ShardedReplicaTailer.class);
 
@@ -34,8 +34,10 @@ public class ShardedReplicaTailer {
       addShutdownHookToMainThread();
       establishMongoDBConnections();
       runTailingThreads(args.length > 0 ? args : new String[]{""});
-      while (true) {
-        ;
+      try {
+        latch.await();
+      } catch (InterruptedException E) {
+        // handle
       }
     } finally {
       if (executor != null) {
@@ -52,17 +54,16 @@ public class ShardedReplicaTailer {
     Properties mongoConnectionProperties = loadProperties();
     hostMongoS = new MongoClient(
         mongoConnectionProperties.getProperty("mongosHostInfo"));
-    timeClient = new MongoClient(
-        mongoConnectionProperties.getProperty(("mongoReplTimeHostInfo")));
-    timeDB = timeClient.getDB("time_d");
+    timeDB = new TimeDBService(mongoConnectionProperties.getProperty("mongoReplTimeHostInfo"));
     shardSetClients = new ShardSetFinder().findShardSets(hostMongoS);
   }
 
   private static void runTailingThreads(String... tailTypes) {
     LOG.info("Beginning tailable mongo using: "+ Arrays.asList(tailTypes));
     executor = Executors.newFixedThreadPool(shardSetClients.size());
+    latch = new CountDownLatch(shardSetClients.size());
     for (Entry<String, MongoClient> client : shardSetClients.entrySet()) {
-      Runnable worker = new OplogTail(client, timeDB, getOpType(tailTypes));
+      Runnable worker = new OplogTail(client, timeDB, getOpType(tailTypes),latch);
       executor.execute(worker);
     }
     executor.shutdown();
@@ -76,8 +77,8 @@ public class ShardedReplicaTailer {
     if (hostMongoS != null) {
       hostMongoS.close();
     }
-    if (timeClient != null) {
-      timeClient.close();
+    if (timeDB != null) {
+      timeDB.close();
     }
     if (shardSetClients != null) {
       for (MongoClient repClient : shardSetClients.values()) {
